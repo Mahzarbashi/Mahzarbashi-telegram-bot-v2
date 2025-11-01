@@ -1,14 +1,10 @@
 services:
   - type: web
-    name: mahzarbashi-telegram-bot-v3
+    name: mahzarbashi-telegram-bot-longpoll
     env: python
     plan: free
     buildCommand: ""
-    startCommand: >
-      bash -c "
-      python set_webhook.py &&
-      uvicorn main:app --host 0.0.0.0 --port 10000
-      "
+    startCommand: "python main.py"
     envVars:
       - key: BOT_TOKEN
         sync: false
