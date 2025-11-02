@@ -1,53 +1,58 @@
-import os
-from telegram import Update, InputFile
-from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, ContextTypes, filters
+from telegram import Update
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 from gtts import gTTS
-import tempfile
-import logging
+from fastapi import FastAPI
+import nest_asyncio
+import asyncio
+import os
 
-# تنظیمات لاگ
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+# 🌐 وب‌سرور FastAPI برای Render
+app = FastAPI()
 
-# توکن ربات از محیط
-TOKEN = os.getenv("BOT_TOKEN")
+# 🔑 توکن ربات (مستقیم در کد برای تست)
+BOT_TOKEN = "8249435097:AAEqSwTL8Ah8Kfyzo9Z_iQE97OVUViXtOmY"
 
-# دستور /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام 👋 من ربات محضرباشی هستم.\nسؤالت رو بنویس تا راهنماییت کنم 🌿")
+# 🧠 فعال‌سازی asyncio برای محیط‌های ترکیبی
+nest_asyncio.apply()
 
-# پاسخ‌دهی خودکار
+# ✉️ تابع پاسخ‌گویی به پیام‌ها
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    response_text = f"پاسخت دربارهٔ: {user_text}\nدر حال حاضر من فقط نسخهٔ آزمایشی هستم 🌱"
+    response_text = f"سلام 👋 {update.effective_user.first_name}!\nپیامت رو گرفتم:\n«{user_text}»"
 
-    # اول پاسخ متنی بفرسته
-    await update.message.reply_text(response_text)
-
-    # تلاش برای ساخت فایل صوتی فارسی
+    # پاسخ صوتی
     try:
-        tts = gTTS(text=response_text, lang="fa", slow=False, tld="com")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
-            tts.save(tmp_file.name)
-            await update.message.reply_voice(voice=InputFile(tmp_file.name))
+        tts = gTTS(response_text, lang="fa")
+        tts.save("reply.mp3")
+        await update.message.reply_audio(audio=open("reply.mp3", "rb"), caption=response_text)
+        os.remove("reply.mp3")
     except Exception as e:
-        logging.warning(f"TTS error: {e}")
-        await update.message.reply_text("فعلاً امکان ارسال صوت وجود ندارد 🎧")
+        await update.message.reply_text(response_text + f"\n\n⚠️ خطا در تولید صدا: {e}")
 
-# راه‌اندازی ربات
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+# ⚙️ ساخت اپلیکیشن تلگرام
+application = ApplicationBuilder().token(BOT_TOKEN).build()
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
+# 🌍 راه‌اندازی وبهوک برای Render
+WEBHOOK_URL = "https://mahzarbashi-telegram-bot-v2-1.onrender.com"
 
-    # اجرای وب‌هوک برای Render
-    port = int(os.environ.get("PORT", 10000))
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path=TOKEN,
-        webhook_url=f"https://mahzarbashi-telegram-bot-v2-1.onrender.com/{TOKEN}"
-    )
+@app.on_event("startup")
+async def on_startup():
+    await application.bot.set_webhook(url=f"{WEBHOOK_URL}/{BOT_TOKEN}")
+    print("✅ Webhook set successfully!")
 
+@app.post(f"/{BOT_TOKEN}")
+async def handle_update(request):
+    data = await request.json()
+    update = Update.de_json(data, application.bot)
+    await application.process_update(update)
+    return {"ok": True}
+
+@app.get("/")
+def home():
+    return {"status": "Mahzarbashi Bot is running ✅"}
+
+# 🚀 اجرای سرور
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=10000)
