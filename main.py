@@ -1,38 +1,82 @@
-import logging
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-import nest_asyncio
 import os
-
-nest_asyncio.apply()
-
-# 🔹 تنظیمات لاگ برای بررسی راحت‌تر خطاها
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    CallbackQueryHandler,
+    ContextTypes
 )
+from gtts import gTTS
+import tempfile
+import requests
+from dotenv import load_dotenv
 
-# 🔹 توکن ربات (از BotFather)
-TOKEN = os.getenv("BOT_TOKEN", "932785959:AAGR9Z_g87RUwuGygcx76lPG5i725jT52TM")
+# بارگذاری متغیرهای محیطی از فایل .env
+load_dotenv()
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# 🔹 دستور start
+# پاسخ‌های FAQ نمونه (قابل توسعه و ذخیره در دیتابیس)
+FAQ_RESPONSES = {
+    "سوال ۱": "پاسخ سوال ۱ به زبان ساده و کامل.",
+    "سوال ۲": "پاسخ سوال ۲ به زبان ساده و کامل."
+}
+
+# منوی شروع
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام 👋 من ربات محضرباشی هستم. چطور می‌تونم کمکتون کنم؟")
+    keyboard = [
+        [InlineKeyboardButton("سوالات رایج", callback_data='faq')],
+        [InlineKeyboardButton("مشاوره حقوقی", url="https://mahzarbashi.com")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "سلام! من ربات محضرباشی هستم 🤖\n"
+        "من می‌تونم به سوالات حقوقی شما پاسخ بدم و شما رو به مشاوره هدایت کنم.",
+        reply_markup=reply_markup
+    )
 
-# 🔹 پاسخ به پیام‌های عادی
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
-    await update.message.reply_text(f"شما گفتید: {user_text}")
+# مدیریت دکمه‌ها
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
-# 🔹 تابع اصلی برای راه‌اندازی ربات
-def main():
+    if query.data == 'faq':
+        keyboard = [[InlineKeyboardButton(q, callback_data=f"faq_{q}")] for q in FAQ_RESPONSES.keys()]
+        await query.edit_message_text("لطفا سوال خود را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+    elif query.data.startswith("faq_"):
+        question = query.data.replace("faq_", "")
+        answer = FAQ_RESPONSES.get(question, "متاسفم، پاسخی برای این سوال ندارم.")
+        await query.edit_message_text(f"سوال: {question}\n\nپاسخ: {answer}")
+        # تولید پاسخ صوتی و ارسال
+        tts = gTTS(answer, lang='fa')
+        with tempfile.NamedTemporaryFile(suffix=".mp3") as tmp_file:
+            tts.save(tmp_file.name)
+            await query.message.reply_audio(open(tmp_file.name, 'rb'))
+
+# پاسخ به پیام‌های متنی ساده
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+    if "سلام" in text:
+        await update.message.reply_text(
+            "سلام! خوش اومدی 😊 می‌تونی از من سوالات حقوقی بپرسی یا به مشاوره هدایت بشی."
+        )
+    else:
+        await update.message.reply_text(
+            "متاسفم، من متوجه نشدم. لطفا یکی از گزینه‌ها را از منو انتخاب کن."
+        )
+
+# اجرای ربات
+if __name__ == '__main__':
+    if not TOKEN:
+        print("توکن ربات پیدا نشد! لطفا فایل .env بساز و TELEGRAM_TOKEN را قرار بده.")
+        exit()
+
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🤖 Bot is running...")
+    print("ربات محضرباشی در حال اجراست...")
     app.run_polling()
-
-if __name__ == "__main__":
-    main()
