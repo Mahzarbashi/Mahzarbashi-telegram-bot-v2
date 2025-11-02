@@ -1,82 +1,117 @@
 import os
+import tempfile
+from flask import Flask, request
+from gtts import gTTS
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
-    filters,
     CallbackQueryHandler,
-    ContextTypes
+    ContextTypes,
+    filters,
 )
-from gtts import gTTS
-import tempfile
-import requests
 from dotenv import load_dotenv
 
-# بارگذاری متغیرهای محیطی از فایل .env
+# بارگذاری متغیرها از .env
 load_dotenv()
-TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# پاسخ‌های FAQ نمونه (قابل توسعه و ذخیره در دیتابیس)
+BOT_TOKEN = os.getenv("TELEGRAM_TOKEN", "8249435097:AAEqSwTL8Ah8Kfyzo9Z_iQE97OVUViXtOmY")
+APP_URL = os.getenv("APP_URL", "https://mahzarbashi.onrender.com")
+
+# ساخت اپلیکیشن Flask برای Webhook
+app = Flask(__name__)
+
+# پاسخ‌های سوالات رایج
 FAQ_RESPONSES = {
-    "سوال ۱": "پاسخ سوال ۱ به زبان ساده و کامل.",
-    "سوال ۲": "پاسخ سوال ۲ به زبان ساده و کامل."
+    "مهریه": "طبق قانون ایران، مهریه حق زن است و هر زمان بخواهد می‌تواند آن را مطالبه کند.",
+    "طلاق توافقی": "در طلاق توافقی، زوجین با توافق درباره مهریه، حضانت و سایر موارد به دادگاه مراجعه می‌کنند.",
+    "حضانت فرزند": "تا ۷ سالگی حضانت با مادر است و بعد از آن دادگاه بر اساس مصلحت کودک تصمیم می‌گیرد.",
 }
 
-# منوی شروع
+# ساخت اپ اصلی تلگرام
+application = Application.builder().token(BOT_TOKEN).build()
+
+
+# فرمان /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("سوالات رایج", callback_data='faq')],
-        [InlineKeyboardButton("مشاوره حقوقی", url="https://mahzarbashi.com")]
+        [InlineKeyboardButton("📚 سوالات رایج", callback_data="faq")],
+        [InlineKeyboardButton("🌐 مراجعه به وبسایت محضرباشی", url="https://mahzarbashi.com")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "سلام! من ربات محضرباشی هستم 🤖\n"
-        "من می‌تونم به سوالات حقوقی شما پاسخ بدم و شما رو به مشاوره هدایت کنم.",
-        reply_markup=reply_markup
+        "سلام! 👋\nمن ربات رسمی محضرباشی هستم.\n"
+        "می‌تونم به سوالات حقوقی شما پاسخ بدم یا شما رو برای مشاوره به سایت هدایت کنم.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# مدیریت دکمه‌ها
+
+# دکمه‌های منو
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.data == 'faq':
-        keyboard = [[InlineKeyboardButton(q, callback_data=f"faq_{q}")] for q in FAQ_RESPONSES.keys()]
-        await query.edit_message_text("لطفا سوال خود را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+    if query.data == "faq":
+        keyboard = [
+            [InlineKeyboardButton(q, callback_data=f"faq_{q}")]
+            for q in FAQ_RESPONSES.keys()
+        ]
+        await query.edit_message_text(
+            "📖 لطفاً موضوع مورد نظر را انتخاب کنید:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
     elif query.data.startswith("faq_"):
         question = query.data.replace("faq_", "")
-        answer = FAQ_RESPONSES.get(question, "متاسفم، پاسخی برای این سوال ندارم.")
-        await query.edit_message_text(f"سوال: {question}\n\nپاسخ: {answer}")
-        # تولید پاسخ صوتی و ارسال
-        tts = gTTS(answer, lang='fa')
-        with tempfile.NamedTemporaryFile(suffix=".mp3") as tmp_file:
-            tts.save(tmp_file.name)
-            await query.message.reply_audio(open(tmp_file.name, 'rb'))
+        answer = FAQ_RESPONSES.get(question, "متاسفم، هنوز پاسخی برای این موضوع ثبت نشده است.")
+        await query.edit_message_text(f"📘 {question}\n\n{answer}")
 
-# پاسخ به پیام‌های متنی ساده
+        # تولید فایل صوتی پاسخ و ارسال
+        tts = gTTS(answer, lang="fa")
+        with tempfile.NamedTemporaryFile(suffix=".mp3") as tmp:
+            tts.save(tmp.name)
+            await query.message.reply_audio(audio=open(tmp.name, "rb"))
+
+
+# پاسخ پیام‌های متنی معمولی
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
+
     if "سلام" in text:
-        await update.message.reply_text(
-            "سلام! خوش اومدی 😊 می‌تونی از من سوالات حقوقی بپرسی یا به مشاوره هدایت بشی."
-        )
+        await update.message.reply_text("سلام! 😊 خوش اومدی. از منو گزینه مورد نظرت رو انتخاب کن.")
+    elif "مهریه" in text:
+        await update.message.reply_text(FAQ_RESPONSES["مهریه"])
+    elif "طلاق" in text:
+        await update.message.reply_text(FAQ_RESPONSES["طلاق توافقی"])
     else:
-        await update.message.reply_text(
-            "متاسفم، من متوجه نشدم. لطفا یکی از گزینه‌ها را از منو انتخاب کن."
-        )
+        await update.message.reply_text("متوجه نشدم 🌿 لطفاً از منوی اصلی یکی از گزینه‌ها رو انتخاب کن.")
 
-# اجرای ربات
-if __name__ == '__main__':
-    if not TOKEN:
-        print("توکن ربات پیدا نشد! لطفا فایل .env بساز و TELEGRAM_TOKEN را قرار بده.")
-        exit()
 
-    app = ApplicationBuilder().token(TOKEN).build()
+# تنظیم Webhook
+@app.route("/setwebhook", methods=["GET"])
+def set_webhook():
+    webhook_url = f"{APP_URL}/{BOT_TOKEN}"
+    success = application.bot.set_webhook(url=webhook_url)
+    if success:
+        return f"Webhook تنظیم شد ✅\n{webhook_url}"
+    return "خطا در تنظیم Webhook ❌", 500
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("ربات محضرباشی در حال اجراست...")
-    app.run_polling()
+# مسیر دریافت آپدیت‌ها از تلگرام
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "ok", 200
+
+
+# ثبت هندلرها
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CallbackQueryHandler(button))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+
+# اجرای Flask برای Render
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
