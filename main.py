@@ -1,117 +1,68 @@
 import os
-import tempfile
-from flask import Flask, request
-from gtts import gTTS
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from fastapi import FastAPI
+from telegram import Update
 from telegram.ext import (
-    Application,
+    ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
     filters,
+    ContextTypes
 )
 from dotenv import load_dotenv
 
-# بارگذاری متغیرها از .env
+# بارگذاری متغیرهای محیطی از .env
 load_dotenv()
 
-BOT_TOKEN = os.getenv("TELEGRAM_TOKEN", "8249435097:AAEqSwTL8Ah8Kfyzo9Z_iQE97OVUViXtOmY")
-APP_URL = os.getenv("APP_URL", "https://mahzarbashi.onrender.com")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+APP_URL = os.getenv("APP_URL")
 
-# ساخت اپلیکیشن Flask برای Webhook
-app = Flask(__name__)
-
-# پاسخ‌های سوالات رایج
-FAQ_RESPONSES = {
-    "مهریه": "طبق قانون ایران، مهریه حق زن است و هر زمان بخواهد می‌تواند آن را مطالبه کند.",
-    "طلاق توافقی": "در طلاق توافقی، زوجین با توافق درباره مهریه، حضانت و سایر موارد به دادگاه مراجعه می‌کنند.",
-    "حضانت فرزند": "تا ۷ سالگی حضانت با مادر است و بعد از آن دادگاه بر اساس مصلحت کودک تصمیم می‌گیرد.",
-}
-
-# ساخت اپ اصلی تلگرام
-application = Application.builder().token(BOT_TOKEN).build()
+app = FastAPI()
 
 
-# فرمان /start
+# --- توابع ربات ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("📚 سوالات رایج", callback_data="faq")],
-        [InlineKeyboardButton("🌐 مراجعه به وبسایت محضرباشی", url="https://mahzarbashi.com")],
-    ]
     await update.message.reply_text(
-        "سلام! 👋\nمن ربات رسمی محضرباشی هستم.\n"
-        "می‌تونم به سوالات حقوقی شما پاسخ بدم یا شما رو برای مشاوره به سایت هدایت کنم.",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        "سلام! 🌸\nمن دستیار هوشمند محضرباشی هستم.\nسوال حقوقی داری؟ بپرس تا راهنماییت کنم."
     )
 
 
-# دکمه‌های منو
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "faq":
-        keyboard = [
-            [InlineKeyboardButton(q, callback_data=f"faq_{q}")]
-            for q in FAQ_RESPONSES.keys()
-        ]
-        await query.edit_message_text(
-            "📖 لطفاً موضوع مورد نظر را انتخاب کنید:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-    elif query.data.startswith("faq_"):
-        question = query.data.replace("faq_", "")
-        answer = FAQ_RESPONSES.get(question, "متاسفم، هنوز پاسخی برای این موضوع ثبت نشده است.")
-        await query.edit_message_text(f"📘 {question}\n\n{answer}")
-
-        # تولید فایل صوتی پاسخ و ارسال
-        tts = gTTS(answer, lang="fa")
-        with tempfile.NamedTemporaryFile(suffix=".mp3") as tmp:
-            tts.save(tmp.name)
-            await query.message.reply_audio(audio=open(tmp.name, "rb"))
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "برای دریافت پاسخ حقوقی، کافیست سوالت را تایپ کنی.\n"
+        "در صورت نیاز، به سایت محضرباشی هم راهنمایی‌ات می‌کنم 🌐"
+    )
 
 
-# پاسخ پیام‌های متنی معمولی
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
-
-    if "سلام" in text:
-        await update.message.reply_text("سلام! 😊 خوش اومدی. از منو گزینه مورد نظرت رو انتخاب کن.")
-    elif "مهریه" in text:
-        await update.message.reply_text(FAQ_RESPONSES["مهریه"])
-    elif "طلاق" in text:
-        await update.message.reply_text(FAQ_RESPONSES["طلاق توافقی"])
-    else:
-        await update.message.reply_text("متوجه نشدم 🌿 لطفاً از منوی اصلی یکی از گزینه‌ها رو انتخاب کن.")
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    await update.message.reply_text(
+        f"🔹 پرسشت دریافت شد:\n{text}\n\nبه زودی پاسخ داده می‌شود."
+    )
 
 
-# تنظیم Webhook
-@app.route("/setwebhook", methods=["GET"])
-def set_webhook():
-    webhook_url = f"{APP_URL}/{BOT_TOKEN}"
-    success = application.bot.set_webhook(url=webhook_url)
-    if success:
-        return f"Webhook تنظیم شد ✅\n{webhook_url}"
-    return "خطا در تنظیم Webhook ❌", 500
+# --- تنظیم اپلیکیشن تلگرام ---
+telegram_app = ApplicationBuilder().token(TOKEN).build()
+
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("help", help_command))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
 
-# مسیر دریافت آپدیت‌ها از تلگرام
-@app.route(f"/{BOT_TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
-    return "ok", 200
+# --- Webhook ---
+@app.on_event("startup")
+async def on_startup():
+    webhook_url = f"{APP_URL}/webhook/{TOKEN}"
+    await telegram_app.bot.set_webhook(webhook_url)
+    print(f"✅ Webhook set to {webhook_url}")
 
 
-# ثبت هندلرها
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CallbackQueryHandler(button))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+@app.post(f"/webhook/{TOKEN}")
+async def webhook(update: dict):
+    update = Update.de_json(update, telegram_app.bot)
+    await telegram_app.process_update(update)
+    return {"ok": True}
 
 
-# اجرای Flask برای Render
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+@app.get("/")
+def home():
+    return {"status": "OK", "bot": "Mahzarbashi Assistant"}
