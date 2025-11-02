@@ -1,11 +1,9 @@
 services:
   - type: web
-    name: mahzarbashi-telegram-bot-longpoll
+    name: mahzarbashi-telegram-bot
     env: python
-    plan: free
     buildCommand: ""
-    startCommand: "python main.py"
+    startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
-        sync: false
-python main.py
+        value: 8249435097:AAEqSwTL8Ah8Kfyzo9Z_iQE97OVUViXtOmY
