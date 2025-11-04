@@ -1,79 +1,55 @@
 import os
 import asyncio
-from fastapi import FastAPI, Request
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 from gtts import gTTS
-from dotenv import load_dotenv
 
-# بارگذاری فایل env
-load_dotenv()
-
+# بارگذاری متغیرهای محیطی
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 APP_URL = os.getenv("APP_URL")
 
 if not TOKEN or not APP_URL:
     raise ValueError("❌ مقادیر TELEGRAM_TOKEN یا APP_URL تنظیم نشده است!")
 
-# ساخت اپلیکیشن FastAPI
-app = FastAPI()
+# پیام خوش‌آمد متنی
+WELCOME_TEXT = """سلام! 👋
+من «دستیار محضرباشی‌»ام 😊
+یه همراه هوشمند که ساخته‌ی نسترن بنی‌طبا هستم، تا پرسش‌های حقوقی‌ت رو ساده، دقیق و بدون دردسر جواب بدم ⚖️
+هر وقت سوالی درباره‌ی قوانین یا کارهای دفترخانه داشتی، من اینجام تا کمکت کنم 💬
+"""
 
-# ساخت بات تلگرام
-telegram_app = ApplicationBuilder().token(TOKEN).build()
+# مسیر ذخیره فایل صوتی
+AUDIO_FILE = "welcome.mp3"
 
-# 🎤 تابع تولید صوت از متن
-def text_to_voice(text, filename="reply.mp3"):
-    tts = gTTS(text=text, lang='fa')
-    tts.save(filename)
-    return filename
+# تولید فایل صوتی با gTTS
+if not os.path.exists(AUDIO_FILE):
+    tts = gTTS(text=WELCOME_TEXT, lang="fa")
+    tts.save(AUDIO_FILE)
 
-# 🎯 دستور /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "سلام 👋 من دستیار محضرباشی‌ام، در خدمت شما هستم. بپرس ببینم چطور می‌تونم کمکت کنم 😊"
-    await update.message.reply_text(msg)
+    await update.message.reply_text(WELCOME_TEXT)
+    await update.message.reply_audio(audio=open(AUDIO_FILE, "rb"))
 
-# 💬 پاسخ به پیام‌های کاربر
+# پاسخ به سوالات حقوقی رایج
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text.strip()
-
-    # پاسخ‌های ساده حقوقی
-    if "مهریه" in user_message:
-        reply = "مهریه حقی است که در عقدنامه ثبت می‌شود و زن هر زمان بخواهد می‌تواند آن را مطالبه کند."
-    elif "طلاق" in user_message:
-        reply = "طلاق زمانی ثبت می‌شود که حکم دادگاه صادر شود و تشریفات قانونی رعایت گردد."
-    elif "حضانت" in user_message:
-        reply = "حضانت فرزند تا ۷ سالگی با مادر و پس از آن با پدر است مگر دادگاه خلافش را تشخیص دهد."
-    elif "سند" in user_message:
-        reply = "سند رسمی در دفترخانه تنظیم می‌شود و اعتبار بیشتری از سند عادی دارد."
+    text = update.message.text.lower()
+    
+    # نمونه سوالات رایج (قابل گسترش)
+    if "وکالت" in text or "وکیل" in text:
+        response = "در مورد وکالت، می‌تونی مراحل و مدارک مورد نیاز رو در سایت محضرباشی ببینی: https://mahzarbashi.onrender.com"
+    elif "ازدواج" in text or "طلاق" in text:
+        response = "مسائل ازدواج و طلاق شامل قوانین مشخصی هست. برای راهنمایی کامل‌تر، به سایت محضرباشی مراجعه کن."
     else:
-        reply = "سؤال حقوقی‌ت رو بپرس تا راهنماییت کنم 🌿"
+        response = "متأسفم، این سوال فراتر از پاسخ کوتاهه. لطفاً به وبسایت محضرباشی سر بزن: https://mahzarbashi.onrender.com"
+    
+    await update.message.reply_text(response)
 
-    # ارسال پاسخ متنی
-    await update.message.reply_text(reply)
+# ایجاد اپلیکیشن و هندلرها
+app = ApplicationBuilder().token(TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # اگر پاسخ کوتاه است، نسخه صوتی‌اش را هم بفرست 🎧
-    if len(reply) < 200:
-        voice_file = text_to_voice(reply)
-        with open(voice_file, "rb") as voice:
-            await update.message.reply_voice(voice)
-        os.remove(voice_file)
-
-# 📦 افزودن هندلرها
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-# 🌐 مسیر وبهوک
-@app.post("/webhook/{token}")
-async def webhook(request: Request, token: str):
-    if token != TOKEN:
-        return {"error": "Invalid token"}
-
-    update = Update.de_json(await request.json(), telegram_app.bot)
-    await telegram_app.initialize()
-    await telegram_app.process_update(update)
-    return {"ok": True}
-
-# 🏠 مسیر تست
-@app.get("/")
-async def home():
-    return {"status": "✅ Bot is live", "creator": "Nastaran Bani Taba"}
+# اجرای ربات
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
