@@ -1,39 +1,76 @@
+import os
+from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-import os
+from gtts import gTTS
+import asyncio
 
+# گرفتن توکن از .env
 TOKEN = os.getenv("BOT_TOKEN")
 
+# ساخت اپلیکیشن‌ها
+app = FastAPI()
+telegram_app = ApplicationBuilder().token(TOKEN).build()
+
+# --- معرفی و شروع ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "سلام 👋 من دستیار حقوقی محضرباشی‌ام. می‌تونم به سؤالات حقوقی روزمره‌ت جواب بدم.\n"
-        "👩🏻‍💼 سازنده من: نسترن بنی‌طبا\n"
-        "بپرس تا راهنماییت کنم."
+    text = (
+        "سلام 👋 من دستیار حقوقی محضرباشی‌ام.\n"
+        "سازنده‌م نسترن بنی‌طباست 💫\n"
+        "سؤالات حقوقی‌تو ازم بپرس، سعی می‌کنم ساده و دقیق جواب بدم.\n"
+        "اگه توضیح طولانی شد، لینک سایت محضرباشی رو می‌فرستم 🌐 mahzarbashi.ir"
     )
+    await update.message.reply_text(text)
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سؤالتو بپرس تا در حد قوانین ایران راهنماییت کنم 🌿")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text.lower()
+# --- پاسخ به سؤال‌ها ---
+async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    question = update.message.text.strip()
 
-    if "طلاق" in user_text:
-        await update.message.reply_text("در طلاق توافقی، هر دو طرف باید در دادگاه حضور پیدا کنن و توافق‌نامه رسمی ارائه بدن.")
-    elif "مهریه" in user_text:
-        await update.message.reply_text("مهریه حق زن هست و حتی بعد از طلاق هم قابل مطالبه‌ست مگر اینکه خودش ببخشه.")
+    if "طلاق" in question:
+        answer = "برای طلاق توافقی باید هر دو طرف رضایت داشته باشن و مدارک کامل باشه."
+    elif "مهریه" in question:
+        answer = "مهریه حق زوجه‌ست و هر زمان بخواد می‌تونه مطالبه کنه."
+    elif "حضانت" in question:
+        answer = "حضانت تا ۷ سالگی با مادر و بعد از اون با پدره، ولی دادگاه ممکنه شرایط خاص رو هم در نظر بگیره."
     else:
-        await update.message.reply_text("سؤالت مشخص نیست، لطفاً دقیق‌تر بپرس 💬")
+        answer = "سؤال خوبی پرسیدی! برای توضیح کامل‌تر لطفاً به سایت محضرباشی سر بزن 🌐 mahzarbashi.ir"
 
-app = ApplicationBuilder().token(TOKEN).build()
+    await update.message.reply_text(answer)
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("help", help_command))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # --- تولید پاسخ صوتی ---
+    try:
+        tts = gTTS(answer, lang="fa")
+        tts.save("voice.mp3")
+        with open("voice.mp3", "rb") as voice:
+            await update.message.reply_voice(voice)
+    except Exception as e:
+        print("خطا در تولید صوت:", e)
 
+
+# --- اضافه کردن هندلرها ---
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
+
+
+# --- وبهوک FastAPI ---
+@app.post("/{token}")
+async def webhook(request: Request, token: str):
+    if token == TOKEN:
+        data = await request.json()
+        update = Update.de_json(data, telegram_app.bot)
+        await telegram_app.process_update(update)
+        return {"ok": True}
+    return {"error": "Invalid token"}
+
+
+@app.get("/")
+def home():
+    return {"status": "Mahzarbashi bot is running 🚀"}
+
+
+# --- اجرای سرور ---
 if __name__ == "__main__":
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 8443)),
-        url_path=TOKEN,
-        webhook_url=f"https://mahzarbashi-telegram-bot-v2-1.onrender.com/{TOKEN}"
-    )
+    import uvicorn
+    port = int(os.getenv("PORT", 10000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
