@@ -15,16 +15,16 @@ APP_URL = os.getenv("APP_URL")
 if not TOKEN or not APP_URL:
     raise ValueError("❌ مقادیر TELEGRAM_TOKEN یا APP_URL تنظیم نشده است!")
 
-# ---- Telegram App ----
+# ---- Telegram Application ----
 telegram_app = ApplicationBuilder().token(TOKEN).build()
 
-# ---- دستور شروع ----
+# ---- Commands ----
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام 👋 من دستیار محضرباشی‌ام، کمکت می‌کنم به سؤالات حقوقی جواب بدی 😊")
+    await update.message.reply_text("سلام 👋 من دستیار محضرباشی‌ام، در خدمت شما هستم.")
 
 telegram_app.add_handler(CommandHandler("start", start))
 
-# ---- FastAPI App ----
+# ---- FastAPI ----
 app = FastAPI()
 
 @app.on_event("startup")
@@ -38,6 +38,12 @@ async def startup():
 async def shutdown():
     await telegram_app.shutdown()
 
+# ✅ مسیر GET فقط برای تست مرورگر
+@app.get("/")
+async def home():
+    return {"status": "OK", "message": "Mahzarbashi Telegram Bot is running 🚀"}
+
+# ✅ مسیر رسمی برای تلگرام (POST)
 @app.post(f"/webhook/{TOKEN}")
 async def webhook(request: Request):
     data = await request.json()
